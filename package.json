@@ -1,0 +1,10 @@
+{
+  "name": "market-price-server",
+  "version": "1.0.0",
+  "description": "سرور واسط برای دریافت قیمت‌های بازار از tgju.org",
+  "main": "api.js",
+  "scripts": {
+    "start": "node api.js"
+  },
+  "dependencies": {}
+}
