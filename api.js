@@ -1,13 +1,12 @@
-// api.js - نسخه مخصوص Render
+// api.js - نسخه نهایی با منابع درست
 
 const http = require('http');
 
 const server = http.createServer(async (req, res) => {
-    // تنظیمات CORS برای اینکه اکستنشن بتونه بهش وصل بشه
+    // تنظیمات CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
     
-    // فقط به درخواست‌های GET پاسخ بده
     if (req.method === 'OPTIONS') {
         res.writeHead(204);
         res.end();
@@ -20,7 +19,6 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // فقط آدرس /api رو قبول کن
     if (req.url !== '/api' && req.url !== '/') {
         res.writeHead(404);
         res.end(JSON.stringify({ error: 'Not Found' }));
@@ -28,34 +26,45 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-        // دریافت اطلاعات از tgju.org
-        const response = await fetch('https://www.tgju.org/');
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const html = await response.text();
-
-        // استخراج قیمت‌ها
-        const dollarMatch = html.match(/دلار.*?(\d{1,3}(?:,\d{3})*)/);
-        const goldMatch = html.match(/طلای ۱۸ عیار.*?(\d{1,3}(?:,\d{3})*)/);
-        const emamiMatch = html.match(/سکه امامی.*?(\d{1,3}(?:,\d{3})*)/);
-
+        // ----- دریافت قیمت دلار از نوبیتکس (API رسمی) -----
+        const dollarResponse = await fetch('https://api.nobitex.ir/v2/orderbook/USDTIRT');
+        const dollarData = await dollarResponse.json();
+        
         let dollarPrice = 'نامشخص';
+        if (dollarData && dollarData.lastTradePrice) {
+            const priceInRials = parseFloat(dollarData.lastTradePrice);
+            const priceInToman = Math.round(priceInRials / 10);
+            dollarPrice = priceInToman.toLocaleString() + ' تومان';
+        }
+
+        // ----- دریافت قیمت طلا و سکه از سایت طلا (gold-price.ir) -----
+        // از یک API عمومی برای قیمت طلا استفاده می‌کنیم
+        const goldResponse = await fetch('https://www.gold-price.ir/api/price');
+        const goldData = await goldResponse.json();
+        
         let goldPrice = 'نامشخص';
         let emamiPrice = 'نامشخص';
-
-        if (dollarMatch && dollarMatch[1]) {
-            const priceInRials = parseInt(dollarMatch[1].replace(/,/g, ''));
-            dollarPrice = Math.round(priceInRials / 10).toLocaleString() + ' تومان';
+        
+        if (goldData && goldData.gold_18) {
+            goldPrice = goldData.gold_18.toLocaleString() + ' ریال';
         }
-        if (goldMatch && goldMatch[1]) {
-            goldPrice = goldMatch[1].replace(/,/g, '') + ' ریال';
-        }
-        if (emamiMatch && emamiMatch[1]) {
-            emamiPrice = emamiMatch[1].replace(/,/g, '') + ' ریال';
+        if (goldData && goldData.emami) {
+            emamiPrice = goldData.emami.toLocaleString() + ' ریال';
         }
 
-        // پاسخ نهایی
+        // اگه gold-price.ir جواب نداد، از یک منبع دیگه استفاده می‌کنیم
+        if (goldPrice === 'نامشخص' || emamiPrice === 'نامشخص') {
+            // منبع دوم: استفاده از سایت arz8.com
+            const backupResponse = await fetch('https://www.arz8.com/api/v1/price');
+            const backupData = await backupResponse.json();
+            
+            if (backupData && backupData.gold) {
+                goldPrice = backupData.gold.gold_18 + ' ریال';
+                emamiPrice = backupData.gold.emami + ' ریال';
+            }
+        }
+
+        // ----- پاسخ نهایی -----
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             success: true,
@@ -72,7 +81,7 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ 
             success: false, 
-            error: 'Failed to fetch data from TGJU' 
+            error: 'Failed to fetch data: ' + error.message
         }));
     }
 });
